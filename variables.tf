@@ -81,6 +81,6 @@ variable "tables" {
 }
 
 variable "tags" {
-  type    = "map"
+  type    = map
   default = {}
 }
