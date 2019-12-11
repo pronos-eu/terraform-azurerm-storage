@@ -76,3 +76,52 @@ resource "azurerm_storage_blob" "main" {
   metadata               = local.blobs[count.index].metadata
   depends_on             = [azurerm_storage_container.main]
 }
+
+# Workaround to set CORS
+
+data "template_file" "cors_config" {
+  template = <<CORS
+    {
+      "$schema": "https://schema.management.azure.com/schemas/2015-01-01/deploymentTemplate.json#",
+      "contentVersion": "1.0.0.0",
+      "parameters": {
+        "storageAccountName": {
+          "type": "string",
+          "metadata": {
+            "description": "Specifies the name of the Azure Storage account."
+          }
+        }
+      },
+      "resources": [
+        {
+          "type": "Microsoft.Storage/storageAccounts",
+          "apiVersion": "2018-07-01",
+          "name": "[parameters('storageAccountName')]",
+          "location": "[resourceGroup().location]",
+          "resources": [
+            {
+              "name": "default",
+              "type": "blobServices",
+              "apiVersion": "2018-07-01",
+              "properties": {"cors": {"corsRules": [{"allowedOrigins": ["${join("\",\"", var.cors_blob_allowed_origins)}"], "allowedMethods": ["${join("\",\"", var.cors_blob_allowed_methods)}"], "maxAgeInSeconds": "${var.cors_blob_max_age}", "exposedHeaders": ["${join("\",\"", var.cors_blob_exposed_headers)}"], "allowedHeaders": ["${join("\",\"", var.cors_blob_allowed_headers)}"]}]}},
+              "dependsOn": ["[concat('Microsoft.Storage/storageAccounts/', parameters('storageAccountName'))]"]
+            }
+          ]
+        }
+      ]
+    }
+  CORS
+}
+
+resource "azurerm_template_deployment" "cors_settings" {
+  count               = length(var.cors_blob_allowed_origins) > 0 ? 1 : 0
+  name                = "cors-settings"
+  resource_group_name = data.azurerm_resource_group.main.name
+  deployment_mode     = "Incremental"
+
+  parameters = {
+    storageAccountName = azurerm_storage_account.main.name
+  }
+
+  template_body = data.template_file.cors_config.rendered
+}
